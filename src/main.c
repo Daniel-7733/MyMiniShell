@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #define INPUT_SIZE 1024
 #define MAX_ARGS 64
@@ -7,6 +8,7 @@
 int tokenize(char *input, char *tokens[]);
 void print_help(void);
 int execute_builtin(char *tokens[], int token_count);
+void print_working_directory(void);
 
 int main(void)
 {
@@ -35,10 +37,6 @@ int main(void)
         if (should_exit) {
             break;
         }
-
-        for (int i = 0; i < token_count; i++) {
-            printf("tokens[%d] = \"%s\"\n", i, tokens[i]);
-        }
     }
 
     return 0;
@@ -66,6 +64,7 @@ void print_help(void)
     printf("MyMiniShell built-in commands:\n");
     printf("  help    Show this help message\n");
     printf("  exit    Exit the shell\n");
+    printf("  pwd     Print the current working directory\n");
 }
 
 int execute_builtin(char *tokens[], int token_count)
@@ -89,7 +88,29 @@ int execute_builtin(char *tokens[], int token_count)
         return 0;
     }
 
+    if (strcmp(tokens[0], "pwd") == 0) {
+        if (token_count == 1) {
+            print_working_directory();
+        } else {
+            printf("minishell: pwd: too many arguments\n");
+        }
+
+        return 0;
+    }
+
     printf("minishell: unknown command: %s\n", tokens[0]);
     return 0;
+}
+
+void print_working_directory(void)
+{
+    char cwd[INPUT_SIZE];
+
+    if (getcwd(cwd, sizeof(cwd)) == NULL) {
+        perror("minishell: pwd");
+        return;
+    }
+
+    printf("%s\n", cwd);
 }
 
