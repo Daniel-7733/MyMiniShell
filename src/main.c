@@ -25,10 +25,14 @@ int main(void)
             continue;
         }
 
-        int should_exit = execute_builtin(tokens, token_count);
+        BuiltinResult result = execute_builtin(tokens, token_count);
 
-        if (should_exit) {
+        if (result == BUILTIN_EXIT) {
             break;
+        }
+
+        if (result == BUILTIN_NOT_FOUND) {
+            execute_external(tokens);
         }
     }
 

@@ -4,8 +4,15 @@
 #define INPUT_SIZE 1024
 #define MAX_ARGS 64
 
+typedef enum {
+    BUILTIN_NOT_FOUND,
+    BUILTIN_HANDLED,
+    BUILTIN_EXIT
+} BuiltinResult;
+
 int tokenize(char *input, char *tokens[]);
-int execute_builtin(char *tokens[], int token_count);
+BuiltinResult execute_builtin(char *tokens[], int token_count);
+void execute_external(char *tokens[]);
 void print_help(void);
 void print_working_directory(void);
 void change_directory(char *tokens[], int token_count);

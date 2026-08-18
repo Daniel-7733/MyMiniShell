@@ -2,8 +2,35 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include "shell.h"
+
+// =======================
+//   mental model
+// =======================
+//
+//
+// minishell process
+//        |
+//        | fork()
+//        |
+//    ┌───┴────────┐
+//    │            │
+//  parent        child
+//    │            │
+//  waitpid()    execvp("ls", tokens)
+//    │            │
+//    │           ls program
+//    │            │
+//    └──── waits ─┘
+//           |
+//     show next prompt
+//
+// ---------------------------
+
+
 
 int tokenize(char *input, char *tokens[])
 {
@@ -31,15 +58,15 @@ void print_help(void)
     printf("  cd      Change the current working directory\n");
 }
 
-int execute_builtin(char *tokens[], int token_count)
+BuiltinResult execute_builtin(char *tokens[], int token_count)
 {
     if (strcmp(tokens[0], "exit") == 0) {
         if (token_count == 1) {
-            return 1;
+            return BUILTIN_EXIT;
         }
 
         printf("minishell: exit: too many arguments\n");
-        return 0;
+        return BUILTIN_HANDLED;
     }
 
     if (strcmp(tokens[0], "help") == 0) {
@@ -49,7 +76,7 @@ int execute_builtin(char *tokens[], int token_count)
             printf("minishell: help: too many arguments\n");
         }
 
-        return 0;
+        return BUILTIN_HANDLED;
     }
 
     if (strcmp(tokens[0], "pwd") == 0) {
@@ -59,16 +86,15 @@ int execute_builtin(char *tokens[], int token_count)
             printf("minishell: pwd: too many arguments\n");
         }
 
-        return 0;
+        return BUILTIN_HANDLED;
     }
 
     if (strcmp(tokens[0], "cd") == 0) {
         change_directory(tokens, token_count);
-        return 0;
+        return BUILTIN_HANDLED;
     }
 
-    printf("minishell: unknown command: %s\n", tokens[0]);
-    return 0;
+    return BUILTIN_NOT_FOUND;
 }
 
 void print_working_directory(void)
@@ -107,6 +133,32 @@ void change_directory(char *tokens[], int token_count)
 
     if (chdir(destination) == -1) {
         perror("minishell: cd");
+    }
+}
+
+/*
+ * fork() < 0    failure
+ * fork() == 0   child process
+ * fork() > 0    parent process; value is child’s process ID
+*/
+void execute_external(char *tokens[])
+{
+    pid_t child_pid = fork();
+
+    if (child_pid == -1) {
+        perror("minishell: fork");
+        return;
+    }
+
+    if (child_pid == 0) {
+        execvp(tokens[0], tokens);
+
+        perror(tokens[0]);
+        _exit(127);
+    }
+
+    if (waitpid(child_pid, NULL, 0) == -1) {
+        perror("minishell: waitpid");
     }
 }
 
