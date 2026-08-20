@@ -4,7 +4,8 @@ CPPFLAGS := -Iinclude
 
 TARGET := minishell
 SOURCES := src/main.c src/shell.c
-TEST_TARGET := test_tokenize
+TOKENIZER_TEST := test_tokenize
+EXTERNAL_TEST := test_execute_external
 
 .PHONY: all run test clean
 
@@ -16,12 +17,16 @@ $(TARGET): $(SOURCES) include/shell.h
 run: $(TARGET)
 	./$(TARGET)
 
-$(TEST_TARGET): tests/test_tokenize.c src/shell.c include/shell.h
-	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_tokenize.c src/shell.c -o $(TEST_TARGET)
+$(TOKENIZER_TEST): tests/test_tokenize.c src/shell.c include/shell.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_tokenize.c src/shell.c -o $(TOKENIZER_TEST)
 
-test: $(TEST_TARGET)
-	./$(TEST_TARGET)
+$(EXTERNAL_TEST): tests/test_execute_external.c src/shell.c include/shell.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_execute_external.c src/shell.c -o $(EXTERNAL_TEST)
+
+test: $(TOKENIZER_TEST) $(EXTERNAL_TEST)
+	./$(TOKENIZER_TEST)
+	./$(EXTERNAL_TEST)
 
 clean:
-	rm -f $(TARGET) $(TEST_TARGET)
+	rm -f $(TARGET) $(TOKENIZER_TEST) $(EXTERNAL_TEST)
 

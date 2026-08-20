@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <errno.h>
+#include <fcntl.h>
 
 #include "shell.h"
 
@@ -30,6 +32,8 @@
 //
 // ---------------------------
 
+
+static int setup_output_redirection(char *tokens[]);
 
 
 int tokenize(char *input, char *tokens[])
@@ -141,24 +145,104 @@ void change_directory(char *tokens[], int token_count)
  * fork() == 0   child process
  * fork() > 0    parent process; value is child’s process ID
 */
-void execute_external(char *tokens[])
+int execute_external(char *tokens[])
 {
     pid_t child_pid = fork();
 
     if (child_pid == -1) {
         perror("minishell: fork");
-        return;
+        return -1;
     }
 
     if (child_pid == 0) {
+        if (setup_output_redirection(tokens)) {
+            _exit(1);
+        }
+
         execvp(tokens[0], tokens);
 
         perror(tokens[0]);
         _exit(127);
     }
 
-    if (waitpid(child_pid, NULL, 0) == -1) {
+    int status; // This veriable contains encoded information about how the child ended.
+
+    while (waitpid(child_pid, &status, 0) == -1) {
+        if (errno == EINTR) {
+            continue;
+        }
+
         perror("minishell: waitpid");
+        return -1;
     }
+
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+    }
+
+    return -1;
+}
+
+static int setup_output_redirection(char *tokens[]) // This function only use in shell.c
+{
+    for (int i = 0; tokens[i] != NULL; i++) {
+        if (strcmp(tokens[i], ">") != 0) {
+            continue;
+        }
+
+        if (i == 0) {
+            fprintf(stderr, "minishell: missing command before '>'\n");
+            return -1;
+        }
+
+        if (tokens[i + 1] == NULL) {
+            fprintf(stderr, "minishell: missing filename after '>'\n");
+            return -1;
+        }
+
+        if (tokens[i + 2] != NULL) {
+            fprintf(stderr, "minishell: only one output file is supported\n");
+            return -1;
+        }
+        
+        // ------- Concept 1 -------
+        // O_WRONLY   open for writing
+        // O_CREAT    create the file if it does not exist
+        // O_TRUNC    empty the existing file before writing
+        // ------- Concept 2 ------- 
+        // owner: read + write
+        // group: read
+        // others: read
+        int output_fd = open(
+            tokens[i + 1],
+            O_WRONLY | O_CREAT | O_TRUNC,
+            0644
+        );
+
+        if (output_fd == -1) {
+            perror("minishell: open");
+            return -1;
+        }
+
+        if (dup2(output_fd, STDOUT_FILENO) == -1) {
+            perror("minishell: dup2");
+            close(output_fd);
+            return -1;
+        }
+
+        if (close(output_fd) == -1) {
+            perror("minishell: close");
+            return -1;
+        }
+
+        tokens[i] = NULL;
+        return 0;
+    }
+
+    return 0;
 }
 
