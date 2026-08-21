@@ -6,6 +6,7 @@ TARGET := minishell
 SOURCES := src/main.c src/shell.c
 TOKENIZER_TEST := test_tokenize
 EXTERNAL_TEST := test_execute_external
+REDIRECTION_TEST := test_redirection
 
 .PHONY: all run test clean
 
@@ -23,10 +24,14 @@ $(TOKENIZER_TEST): tests/test_tokenize.c src/shell.c include/shell.h
 $(EXTERNAL_TEST): tests/test_execute_external.c src/shell.c include/shell.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_execute_external.c src/shell.c -o $(EXTERNAL_TEST)
 
-test: $(TOKENIZER_TEST) $(EXTERNAL_TEST)
+$(REDIRECTION_TEST): tests/test_redirection.c src/shell.c include/shell.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_redirection.c src/shell.c -o $(REDIRECTION_TEST)
+
+test: $(TOKENIZER_TEST) $(EXTERNAL_TEST) $(REDIRECTION_TEST)
 	./$(TOKENIZER_TEST)
 	./$(EXTERNAL_TEST)
+	./$(REDIRECTION_TEST)
 
 clean:
-	rm -f $(TARGET) $(TOKENIZER_TEST) $(EXTERNAL_TEST)
+	rm -f $(TARGET) $(TOKENIZER_TEST) $(EXTERNAL_TEST) $(REDIRECTION_TEST)
 

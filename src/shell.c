@@ -34,7 +34,7 @@
 
 
 static int setup_output_redirection(char *tokens[]);
-
+static int find_output_redirection(char *tokens[]);
 
 int tokenize(char *input, char *tokens[])
 {
@@ -155,7 +155,7 @@ int execute_external(char *tokens[])
     }
 
     if (child_pid == 0) {
-        if (setup_output_redirection(tokens)) {
+        if (setup_output_redirection(tokens) == -1) {
             _exit(1);
         }
 
@@ -193,22 +193,32 @@ static int setup_output_redirection(char *tokens[]) // This function only use in
         if (strcmp(tokens[i], ">") != 0) {
             continue;
         }
+        
+        int operator_index = find_output_redirection(tokens);
 
-        if (i == 0) {
+        if (operator_index == -1) {
+            return 0;
+        }
+
+        if (operator_index == 0) {
             fprintf(stderr, "minishell: missing command before '>'\n");
             return -1;
         }
 
-        if (tokens[i + 1] == NULL) {
+        if (tokens[operator_index + 1] == NULL) {
             fprintf(stderr, "minishell: missing filename after '>'\n");
             return -1;
         }
 
-        if (tokens[i + 2] != NULL) {
+        if (tokens[operator_index + 2] != NULL) {
             fprintf(stderr, "minishell: only one output file is supported\n");
             return -1;
         }
         
+
+        // --------------Part 2 -------------- //
+        char *filename = tokens[operator_index + 1];
+
         // ------- Concept 1 -------
         // O_WRONLY   open for writing
         // O_CREAT    create the file if it does not exist
@@ -218,7 +228,7 @@ static int setup_output_redirection(char *tokens[]) // This function only use in
         // group: read
         // others: read
         int output_fd = open(
-            tokens[i + 1],
+            filename,
             O_WRONLY | O_CREAT | O_TRUNC,
             0644
         );
@@ -239,10 +249,29 @@ static int setup_output_redirection(char *tokens[]) // This function only use in
             return -1;
         }
 
-        tokens[i] = NULL;
+        tokens[operator_index] = NULL;
         return 0;
     }
 
     return 0;
 }
 
+/*
+ * let say input is echo hello > output.txt
+ * function return 2 because sign is on 2nd index.
+ * However, if the out put is echo hello
+ * then function return -1 because the input doesn't have the sign
+ *
+ * -1 = operator not found
+ *  0+ = index where operator was found
+ */
+static int find_output_redirection(char *tokens[])
+{
+    for (int i = 0; tokens[i] != NULL; i++) {
+        if (strcmp(tokens[i], ">") == 0) {
+            return i;
+        }
+    }
+
+    return -1;
+}
