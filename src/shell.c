@@ -189,69 +189,78 @@ int execute_external(char *tokens[])
 
 static int setup_output_redirection(char *tokens[]) // This function only use in shell.c
 {
-    for (int i = 0; tokens[i] != NULL; i++) {
-        if (strcmp(tokens[i], ">") != 0) {
-            continue;
-        }
-        
-        int operator_index = find_output_redirection(tokens);
+    int operator_index = find_output_redirection(tokens);
 
-        if (operator_index == -1) {
-            return 0;
-        }
-
-        if (operator_index == 0) {
-            fprintf(stderr, "minishell: missing command before '>'\n");
-            return -1;
-        }
-
-        if (tokens[operator_index + 1] == NULL) {
-            fprintf(stderr, "minishell: missing filename after '>'\n");
-            return -1;
-        }
-
-        if (tokens[operator_index + 2] != NULL) {
-            fprintf(stderr, "minishell: only one output file is supported\n");
-            return -1;
-        }
-        
-
-        // --------------Part 2 -------------- //
-        char *filename = tokens[operator_index + 1];
-
-        // ------- Concept 1 -------
-        // O_WRONLY   open for writing
-        // O_CREAT    create the file if it does not exist
-        // O_TRUNC    empty the existing file before writing
-        // ------- Concept 2 ------- 
-        // owner: read + write
-        // group: read
-        // others: read
-        int output_fd = open(
-            filename,
-            O_WRONLY | O_CREAT | O_TRUNC,
-            0644
-        );
-
-        if (output_fd == -1) {
-            perror("minishell: open");
-            return -1;
-        }
-
-        if (dup2(output_fd, STDOUT_FILENO) == -1) {
-            perror("minishell: dup2");
-            close(output_fd);
-            return -1;
-        }
-
-        if (close(output_fd) == -1) {
-            perror("minishell: close");
-            return -1;
-        }
-
-        tokens[operator_index] = NULL;
+    if (operator_index == -1) {
         return 0;
     }
+
+    if (operator_index == 0) {
+        fprintf(
+            stderr,
+            "minishell: missing command before '%s'\n",
+            tokens[operator_index]
+        );
+        return -1;
+    }
+
+    if (tokens[operator_index + 1] == NULL) {
+        fprintf(
+            stderr,
+            "minishell: missing filename after '%s'\n",
+            tokens[operator_index]
+        );
+        return -1;
+    }
+
+    if (tokens[operator_index + 2] != NULL) {
+        fprintf(
+            stderr,
+            "minishell: only one output file is supported\n"
+        );
+        return -1;
+    }
+
+    // --------------Part 2 -------------- //
+    char *operator = tokens[operator_index];
+    char *filename = tokens[operator_index + 1];
+
+    // ------- Concept 1 -------
+    // O_WRONLY   open for writing
+    // O_CREAT    create the file if it does not exist
+    // O_TRUNC    empty the existing file before writing
+    int flags = O_WRONLY | O_CREAT;
+
+    if (strcmp(operator, ">") == 0) {
+        flags |= O_TRUNC;
+    } else {
+        flags |= O_APPEND;
+    }
+
+
+    // ------- Concept 2 ------- 
+    // owner: read + write
+    // group: read
+    // others: read
+    int output_fd = open(filename, flags, 0644);
+
+    if (output_fd == -1) {
+        perror("minishell: open");
+        return -1;
+    }
+
+    if (dup2(output_fd, STDOUT_FILENO) == -1) {
+        perror("minishell: dup2");
+        close(output_fd);
+        return -1;
+    }
+
+    if (close(output_fd) == -1) {
+        perror("minishell: close");
+        return -1;
+    }
+
+    tokens[operator_index] = NULL;
 
     return 0;
 }
@@ -268,10 +277,14 @@ static int setup_output_redirection(char *tokens[]) // This function only use in
 static int find_output_redirection(char *tokens[])
 {
     for (int i = 0; tokens[i] != NULL; i++) {
-        if (strcmp(tokens[i], ">") == 0) {
+        if (
+            strcmp(tokens[i], ">") == 0 ||
+            strcmp(tokens[i], ">>") == 0
+        ) {
             return i;
         }
     }
 
     return -1;
 }
+

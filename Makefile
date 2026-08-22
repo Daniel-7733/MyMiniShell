@@ -4,6 +4,7 @@ CPPFLAGS := -Iinclude
 
 TARGET := minishell
 SOURCES := src/main.c src/shell.c
+
 TOKENIZER_TEST := test_tokenize
 EXTERNAL_TEST := test_execute_external
 REDIRECTION_TEST := test_redirection
