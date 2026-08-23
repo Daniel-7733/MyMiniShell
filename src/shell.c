@@ -35,6 +35,9 @@
 
 static int setup_output_redirection(char *tokens[]);
 static int find_output_redirection(char *tokens[]);
+static int find_input_redirection(char *tokens[]);
+static int setup_input_redirection(char *tokens[]);
+
 
 int tokenize(char *input, char *tokens[])
 {
@@ -155,6 +158,10 @@ int execute_external(char *tokens[])
     }
 
     if (child_pid == 0) {
+        if (setup_input_redirection(tokens) == -1) {
+            _exit(1);
+        }
+
         if (setup_output_redirection(tokens) == -1) {
             _exit(1);
         }
@@ -288,3 +295,65 @@ static int find_output_redirection(char *tokens[])
     return -1;
 }
 
+// ---------------- Input part ---------------- 
+static int find_input_redirection(char *tokens[])
+{
+    for (int i = 0; tokens[i] != NULL; i++) {
+        if (strcmp(tokens[i], "<") == 0) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+static int setup_input_redirection(char *tokens[])
+{
+    int operator_index = find_input_redirection(tokens);
+
+    if (operator_index == -1) {
+        return 0;
+    }
+
+    if (operator_index == 0) {
+        fprintf(stderr, "minishell: missing command before '<'\n");
+        return -1;
+    }
+
+    if (tokens[operator_index + 1] == NULL) {
+        fprintf(stderr, "minishell: missing filename after '<'\n");
+        return -1;
+    }
+
+    if (tokens[operator_index + 2] != NULL) {
+        fprintf(
+            stderr,
+            "minishell: only one input file is supported\n"
+        );
+        return -1;
+    }
+
+    char *filename = tokens[operator_index + 1];
+
+    int input_fd = open(filename, O_RDONLY);
+
+    if (input_fd == -1) {
+        perror("minishell: open");
+        return -1;
+    }
+
+    if (dup2(input_fd, STDIN_FILENO) == -1) {
+        perror("minishell: dup2");
+        close(input_fd);
+        return -1;
+    }
+
+    if (close(input_fd) == -1) {
+        perror("minishell: close");
+        return -1;
+    }
+
+    tokens[operator_index] = NULL;
+
+    return 0;
+}
