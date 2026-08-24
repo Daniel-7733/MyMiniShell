@@ -33,10 +33,12 @@
 // ---------------------------
 
 
-static int setup_output_redirection(char *tokens[]);
-static int find_output_redirection(char *tokens[]);
-static int find_input_redirection(char *tokens[]);
-static int setup_input_redirection(char *tokens[]);
+// =============================================
+//           private declarations  
+// =============================================
+static int is_redirection_operator(const char *token);
+static int parse_redirections(char *tokens[], Redirection *redirection);
+static int setup_redirections(const Redirection *redirection);
 
 
 int tokenize(char *input, char *tokens[])
@@ -158,11 +160,13 @@ int execute_external(char *tokens[])
     }
 
     if (child_pid == 0) {
-        if (setup_input_redirection(tokens) == -1) {
-            _exit(1);
+        Redirection redirection;
+
+        if (parse_redirections(tokens, &redirection) == -1) {
+            _exit(2);
         }
 
-        if (setup_output_redirection(tokens) == -1) {
+        if (setup_redirections(&redirection) == -1) {
             _exit(1);
         }
 
@@ -194,166 +198,130 @@ int execute_external(char *tokens[])
     return -1;
 }
 
-static int setup_output_redirection(char *tokens[]) // This function only use in shell.c
+
+// =============================================
+//           Recognize operators  
+// =============================================
+static int is_redirection_operator(const char *token)
 {
-    int operator_index = find_output_redirection(tokens);
+    return strcmp(token, "<") == 0 ||
+           strcmp(token, ">") == 0 ||
+           strcmp(token, ">>") == 0;
+}
 
-    if (operator_index == -1) {
-        return 0;
+static int parse_redirections(char *tokens[], Redirection *redirection)
+{
+    redirection->input_file = NULL;
+    redirection->output_file = NULL;
+    redirection->append = 0;
+
+    int read_index = 0;
+    int write_index = 0;
+
+    while (tokens[read_index] != NULL) {
+        char *token = tokens[read_index];
+
+        if (!is_redirection_operator(token)) {
+            tokens[write_index] = token;
+            write_index++;
+            read_index++;
+            continue;
+        }
+
+        char *filename = tokens[read_index + 1];
+
+        if (filename == NULL || is_redirection_operator(filename)) {
+            fprintf(stderr, "minishell: missing filename after '%s'\n", token);
+            return -1;
+        }
+
+        if (strcmp(token, "<") == 0) {
+            if (redirection->input_file != NULL) {
+                fprintf(stderr, "minishell: multiple input redirections\n");
+                return -1;
+            }
+
+            redirection->input_file = filename;
+        } else {
+            if (redirection->output_file != NULL) {
+                fprintf(stderr, "minishell: multiple output redirections\n");
+                return -1;
+            }
+
+            redirection->output_file = filename;
+            redirection->append = strcmp(token, ">>") == 0;
+        }
+
+        read_index += 2;
     }
 
-    if (operator_index == 0) {
-        fprintf(
-            stderr,
-            "minishell: missing command before '%s'\n",
-            tokens[operator_index]
-        );
+    tokens[write_index] = NULL;
+
+    if (write_index == 0) {
+        fprintf(stderr, "minishell: missing command\n");
         return -1;
     }
-
-    if (tokens[operator_index + 1] == NULL) {
-        fprintf(
-            stderr,
-            "minishell: missing filename after '%s'\n",
-            tokens[operator_index]
-        );
-        return -1;
-    }
-
-    if (tokens[operator_index + 2] != NULL) {
-        fprintf(
-            stderr,
-            "minishell: only one output file is supported\n"
-        );
-        return -1;
-    }
-
-    // --------------Part 2 -------------- //
-    char *operator = tokens[operator_index];
-    char *filename = tokens[operator_index + 1];
-
-    // ------- Concept 1 -------
-    // O_WRONLY   open for writing
-    // O_CREAT    create the file if it does not exist
-    // O_TRUNC    empty the existing file before writing
-    int flags = O_WRONLY | O_CREAT;
-
-    if (strcmp(operator, ">") == 0) {
-        flags |= O_TRUNC;
-    } else {
-        flags |= O_APPEND;
-    }
-
-
-    // ------- Concept 2 ------- 
-    // owner: read + write
-    // group: read
-    // others: read
-    int output_fd = open(filename, flags, 0644);
-
-    if (output_fd == -1) {
-        perror("minishell: open");
-        return -1;
-    }
-
-    if (dup2(output_fd, STDOUT_FILENO) == -1) {
-        perror("minishell: dup2");
-        close(output_fd);
-        return -1;
-    }
-
-    if (close(output_fd) == -1) {
-        perror("minishell: close");
-        return -1;
-    }
-
-    tokens[operator_index] = NULL;
 
     return 0;
 }
 
-/*
- * let say input is echo hello > output.txt
- * function return 2 because sign is on 2nd index.
- * However, if the out put is echo hello
- * then function return -1 because the input doesn't have the sign
- *
- * -1 = operator not found
- *  0+ = index where operator was found
- */
-static int find_output_redirection(char *tokens[])
+
+static int setup_redirections(const Redirection *redirection)
 {
-    for (int i = 0; tokens[i] != NULL; i++) {
-        if (
-            strcmp(tokens[i], ">") == 0 ||
-            strcmp(tokens[i], ">>") == 0
-        ) {
-            return i;
-        }
-    }
-
-    return -1;
-}
-
-// ---------------- Input part ---------------- 
-static int find_input_redirection(char *tokens[])
-{
-    for (int i = 0; tokens[i] != NULL; i++) {
-        if (strcmp(tokens[i], "<") == 0) {
-            return i;
-        }
-    }
-
-    return -1;
-}
-
-static int setup_input_redirection(char *tokens[])
-{
-    int operator_index = find_input_redirection(tokens);
-
-    if (operator_index == -1) {
-        return 0;
-    }
-
-    if (operator_index == 0) {
-        fprintf(stderr, "minishell: missing command before '<'\n");
-        return -1;
-    }
-
-    if (tokens[operator_index + 1] == NULL) {
-        fprintf(stderr, "minishell: missing filename after '<'\n");
-        return -1;
-    }
-
-    if (tokens[operator_index + 2] != NULL) {
-        fprintf(
-            stderr,
-            "minishell: only one input file is supported\n"
+    if (redirection->input_file != NULL) {
+        int input_fd = open(
+            redirection->input_file,
+            O_RDONLY
         );
-        return -1;
+
+        if (input_fd == -1) {
+            perror("minishell: open input");
+            return -1;
+        }
+
+        if (dup2(input_fd, STDIN_FILENO) == -1) {
+            perror("minishell: dup2 input");
+            close(input_fd);
+            return -1;
+        }
+
+        if (close(input_fd) == -1) {
+            perror("minishell: close input");
+            return -1;
+        }
     }
 
-    char *filename = tokens[operator_index + 1];
+    if (redirection->output_file != NULL) {
+        int flags = O_WRONLY | O_CREAT;
 
-    int input_fd = open(filename, O_RDONLY);
+        if (redirection->append) {
+            flags |= O_APPEND;
+        } else {
+            flags |= O_TRUNC;
+        }
 
-    if (input_fd == -1) {
-        perror("minishell: open");
-        return -1;
+        int output_fd = open(
+            redirection->output_file,
+            flags,
+            0644
+        );
+
+        if (output_fd == -1) {
+            perror("minishell: open output");
+            return -1;
+        }
+
+        if (dup2(output_fd, STDOUT_FILENO) == -1) {
+            perror("minishell: dup2 output");
+            close(output_fd);
+            return -1;
+        }
+
+        if (close(output_fd) == -1) {
+            perror("minishell: close output");
+            return -1;
+        }
     }
-
-    if (dup2(input_fd, STDIN_FILENO) == -1) {
-        perror("minishell: dup2");
-        close(input_fd);
-        return -1;
-    }
-
-    if (close(input_fd) == -1) {
-        perror("minishell: close");
-        return -1;
-    }
-
-    tokens[operator_index] = NULL;
 
     return 0;
 }

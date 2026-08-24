@@ -10,6 +10,12 @@ typedef enum {
     BUILTIN_EXIT
 } BuiltinResult;
 
+typedef struct {
+    char *input_file;
+    char *output_file;
+    int append;
+} Redirection;
+
 int tokenize(char *input, char *tokens[]);
 BuiltinResult execute_builtin(char *tokens[], int token_count);
 int execute_external(char *tokens[]);
