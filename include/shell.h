@@ -22,5 +22,7 @@ int execute_external(char *tokens[]);
 void print_help(void);
 void print_working_directory(void);
 void change_directory(char *tokens[], int token_count);
+int find_pipe(char *tokens[]);
+int execute_pipeline(char *tokens[], int pipe_index);
 
 #endif

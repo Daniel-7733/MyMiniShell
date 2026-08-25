@@ -1,3 +1,4 @@
+#include <asm-generic/errno-base.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,7 +40,7 @@
 static int is_redirection_operator(const char *token);
 static int parse_redirections(char *tokens[], Redirection *redirection);
 static int setup_redirections(const Redirection *redirection);
-
+static int wait_for_child(pid_t child_pid);
 
 int tokenize(char *input, char *tokens[])
 {
@@ -176,26 +177,7 @@ int execute_external(char *tokens[])
         _exit(127);
     }
 
-    int status; // This veriable contains encoded information about how the child ended.
-
-    while (waitpid(child_pid, &status, 0) == -1) {
-        if (errno == EINTR) {
-            continue;
-        }
-
-        perror("minishell: waitpid");
-        return -1;
-    }
-
-    if (WIFEXITED(status)) {
-        return WEXITSTATUS(status);
-    }
-
-    if (WIFSIGNALED(status)) {
-        return 128 + WTERMSIG(status);
-    }
-
-    return -1;
+    return wait_for_child(child_pid);
 }
 
 
@@ -325,3 +307,160 @@ static int setup_redirections(const Redirection *redirection)
 
     return 0;
 }
+
+
+// =============================================
+//               The pipline
+//
+//       ls stdout ──► pipe ──► wc stdin 
+// =============================================
+int find_pipe(char *tokens[])
+{
+    for (int i = 0; tokens[i] != NULL; i++) {
+        if (strcmp(tokens[i], "|") == 0) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+int execute_pipeline(char *tokens[], int pipe_index)
+{
+    if (pipe_index == 0) {
+        fprintf(stderr, "minishell: missing command before '|'\n");
+        return 2;
+    }
+
+    if (tokens[pipe_index + 1] == NULL) {
+        fprintf(stderr, "minishell: missing command after '|'\n");
+        return 2;
+    }
+
+    for (int i = pipe_index + 1; tokens[i] != NULL; i++) {
+        if (strcmp(tokens[i], "|") == 0) {
+            fprintf(
+                stderr,
+                "minishell: only one pipe is supported\n"
+            );
+            return 2;
+        }
+    }
+
+    for (int i = 0; tokens[i] != NULL; i++) {
+        if (is_redirection_operator(tokens[i])) {
+            fprintf(
+                stderr,
+                "minishell: redirection with pipes "
+                "is not supported yet\n"
+            );
+            return 2;
+        }
+    }
+
+    tokens[pipe_index] = NULL;
+
+    char **left_command = tokens;
+    char **right_command = &tokens[pipe_index + 1];
+
+    int pipe_fds[2];
+
+    if (pipe(pipe_fds) == -1) {
+        perror("minishell: pipe");
+        return 1;
+    }
+
+    pid_t left_pid = fork();
+
+    if (left_pid == -1) {
+        perror("minishell: fork");
+
+        close(pipe_fds[0]);
+        close(pipe_fds[1]);
+
+        return 1;
+    }
+
+    if (left_pid == 0) {
+        if (dup2(pipe_fds[1], STDOUT_FILENO) == -1) {
+            perror("minishell: dup2");
+            _exit(1);
+        }
+
+        close(pipe_fds[0]);
+        close(pipe_fds[1]);
+
+        execvp(left_command[0], left_command);
+
+        perror(left_command[0]);
+        _exit(127);
+    }
+
+    pid_t right_pid = fork();
+
+    if (right_pid == -1) {
+        perror("minishell: fork");
+
+        close(pipe_fds[0]);
+        close(pipe_fds[1]);
+
+        waitpid(left_pid, NULL, 0);
+        return 1;
+    }
+
+    if (right_pid == 0) {
+        if (dup2(pipe_fds[0], STDIN_FILENO) == -1) {
+            perror("minishell: dup2");
+            _exit(1);
+        }
+
+        close(pipe_fds[0]);
+        close(pipe_fds[1]);
+
+        execvp(right_command[0], right_command);
+
+        perror(right_command[0]);
+        _exit(127);
+    }
+
+    close(pipe_fds[0]);
+    close(pipe_fds[1]);
+
+    int left_result = wait_for_child(left_pid);
+    int right_result = wait_for_child(right_pid);
+
+    if (left_result == -1 || right_result == -1) {
+        return 1;
+    }
+
+    return right_result;
+}
+
+
+// =============================================
+//             Helper function 
+// =============================================
+static int wait_for_child(pid_t child_pid)
+{
+    int status; // This veriable contains encoded information about how the child ended.
+
+    while (waitpid(child_pid, &status, 0) == -1) {
+        if (errno == EINTR) {
+            continue;
+        }
+
+        perror("minishell: waitpid");
+        return 1;
+    }
+
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+    }
+
+    return 1;
+}
+

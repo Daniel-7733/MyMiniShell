@@ -25,6 +25,13 @@ int main(void)
             continue;
         }
 
+        int pipe_index = find_pipe(tokens);
+
+        if (pipe_index != -1) {
+            execute_pipeline(tokens, pipe_index);
+            continue;
+        }
+
         BuiltinResult result = execute_builtin(tokens, token_count);
 
         if (result == BUILTIN_EXIT) {
