@@ -325,28 +325,37 @@ int find_pipe(char *tokens[])
     return -1;
 }
 
-int execute_pipeline(char *tokens[], int pipe_index)
+static int split_pipeline(char *tokens[], char **commands[])
 {
-    if (pipe_index == 0) {
-        fprintf(stderr, "minishell: missing command before '|'\n");
-        return 2;
-    }
+    int command_count = 1;
 
-    if (tokens[pipe_index + 1] == NULL) {
-        fprintf(stderr, "minishell: missing command after '|'\n");
-        return 2;
-    }
+    commands[0] = tokens;
 
-    for (int i = pipe_index + 1; tokens[i] != NULL; i++) {
-        if (strcmp(tokens[i], "|") == 0) {
-            fprintf(
-                stderr,
-                "minishell: only one pipe is supported\n"
-            );
-            return 2;
+    for (int i = 0; tokens[i] != NULL; i++) {
+        if (strcmp(tokens[i], "|") != 0) {
+            continue;
         }
+
+        if (i == 0) {
+            fprintf(stderr, "minishell: missing command before '|'\n");
+            return -1;
+        }
+
+        if (tokens[i + 1] == NULL || strcmp(tokens[i + 1], "|") == 0) {
+            fprintf(stderr, "minishell: missing command after '|'\n");
+            return -1;
+        }
+
+        tokens[i] = NULL;
+        commands[command_count] = &tokens[i + 1];
+        command_count++;
     }
 
+    return command_count;
+}
+
+int execute_pipeline(char *tokens[])
+{
     for (int i = 0; tokens[i] != NULL; i++) {
         if (is_redirection_operator(tokens[i])) {
             fprintf(
@@ -358,82 +367,128 @@ int execute_pipeline(char *tokens[], int pipe_index)
         }
     }
 
-    tokens[pipe_index] = NULL;
+    char **commands[MAX_ARGS];
+    pid_t child_pids[MAX_ARGS];
 
-    char **left_command = tokens;
-    char **right_command = &tokens[pipe_index + 1];
+    int command_count = split_pipeline(tokens, commands);
 
-    int pipe_fds[2];
-
-    if (pipe(pipe_fds) == -1) {
-        perror("minishell: pipe");
-        return 1;
+    if (command_count == -1) {
+        return 2;
     }
 
-    pid_t left_pid = fork();
+    int previous_read_fd = -1;
+    int children_created = 0;
 
-    if (left_pid == -1) {
-        perror("minishell: fork");
+    for (int i = 0; i < command_count; i++) {
+        int pipe_fds[2] = {-1, -1};
+        int has_next_command = i < command_count - 1;
 
-        close(pipe_fds[0]);
-        close(pipe_fds[1]);
+        if (has_next_command && pipe(pipe_fds) == -1) {
+            perror("minishell: pipe");
 
-        return 1;
-    }
+            if (previous_read_fd != -1) {
+                close(previous_read_fd);
+            }
 
-    if (left_pid == 0) {
-        if (dup2(pipe_fds[1], STDOUT_FILENO) == -1) {
-            perror("minishell: dup2");
-            _exit(1);
+            for (int j = 0; j < children_created; j++) {
+                wait_for_child(child_pids[j]);
+            }
+
+            return 1;
         }
 
-        close(pipe_fds[0]);
-        close(pipe_fds[1]);
+        pid_t child_pid = fork();
 
-        execvp(left_command[0], left_command);
+        if (child_pid == -1) {
+            perror("minishell: fork");
 
-        perror(left_command[0]);
-        _exit(127);
-    }
+            if (previous_read_fd != -1) {
+                close(previous_read_fd);
+            }
 
-    pid_t right_pid = fork();
+            if (has_next_command) {
+                close(pipe_fds[0]);
+                close(pipe_fds[1]);
+            }
 
-    if (right_pid == -1) {
-        perror("minishell: fork");
+            for (int j = 0; j < children_created; j++) {
+                wait_for_child(child_pids[j]);
+            }
 
-        close(pipe_fds[0]);
-        close(pipe_fds[1]);
-
-        waitpid(left_pid, NULL, 0);
-        return 1;
-    }
-
-    if (right_pid == 0) {
-        if (dup2(pipe_fds[0], STDIN_FILENO) == -1) {
-            perror("minishell: dup2");
-            _exit(1);
+            return 1;
         }
 
-        close(pipe_fds[0]);
-        close(pipe_fds[1]);
+        if (child_pid == 0) {
+            if (previous_read_fd != -1) {
+                if (
+                    dup2(
+                        previous_read_fd,
+                        STDIN_FILENO
+                    ) == -1
+                ) {
+                    perror("minishell: dup2 input");
+                    _exit(1);
+                }
+            }
 
-        execvp(right_command[0], right_command);
+            if (has_next_command) {
+                if (
+                    dup2(
+                        pipe_fds[1],
+                        STDOUT_FILENO
+                    ) == -1
+                ) {
+                    perror("minishell: dup2 output");
+                    _exit(1);
+                }
+            }
 
-        perror(right_command[0]);
-        _exit(127);
+            if (previous_read_fd != -1) {
+                close(previous_read_fd);
+            }
+
+            if (has_next_command) {
+                close(pipe_fds[0]);
+                close(pipe_fds[1]);
+            }
+
+            execvp(commands[i][0], commands[i]);
+
+            perror(commands[i][0]);
+            _exit(127);
+        }
+
+        child_pids[children_created] = child_pid;
+        children_created++;
+
+        if (previous_read_fd != -1) {
+            close(previous_read_fd);
+        }
+
+        if (has_next_command) {
+            close(pipe_fds[1]);
+            previous_read_fd = pipe_fds[0];
+        } else {
+            previous_read_fd = -1;
+        }
     }
 
-    close(pipe_fds[0]);
-    close(pipe_fds[1]);
+    int pipeline_result = 0;
 
-    int left_result = wait_for_child(left_pid);
-    int right_result = wait_for_child(right_pid);
+    for (int i = 0; i < children_created; i++) {
+        int child_result =
+            wait_for_child(child_pids[i]);
 
-    if (left_result == -1 || right_result == -1) {
-        return 1;
+        if (i == children_created - 1) {
+            if (child_result == -1) {
+                pipeline_result = 1;
+            } else {
+                pipeline_result = child_result;
+            }
+        }
     }
 
-    return right_result;
+    return pipeline_result;
 }
 
 

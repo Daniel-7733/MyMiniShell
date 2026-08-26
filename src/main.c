@@ -28,7 +28,7 @@ int main(void)
         int pipe_index = find_pipe(tokens);
 
         if (pipe_index != -1) {
-            execute_pipeline(tokens, pipe_index);
+            execute_pipeline(tokens);
             continue;
         }
 
