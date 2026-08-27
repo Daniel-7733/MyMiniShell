@@ -27,6 +27,87 @@ The first version can:
 
 It does not execute external commands yet. That is intentional.
 
+
+## Current features
+
+MyMiniShell currently supports:
+
+- Interactive REPL prompt
+- Command tokenization
+- Built-in commands:
+  - `help`
+  - `exit`
+  - `pwd`
+  - `cd`
+- External command execution using `fork()`, `execvp()`, and `waitpid()`
+- Child-process exit status handling
+- Output redirection:
+  - `>` — create or truncate a file
+  - `>>` — append to a file
+- Input redirection with `<`
+- Combined input and output redirection
+- Pipelines containing multiple external commands
+- Automated tests for tokenization, external commands, redirection, and pipelines
+
+## Examples
+
+```bash
+./minishell
+```
+
+```text
+minishell> pwd
+/home/user/MyMiniShell
+
+minishell> echo hello
+hello
+
+minishell> echo hello > output.txt
+minishell> cat output.txt
+hello
+
+minishell> echo second >> output.txt
+
+minishell> sort < unsorted.txt > sorted.txt
+
+minishell> ls | grep test | wc -l
+
+minishell> exit
+```
+
+## Current limitations
+
+MyMiniShell is a learning project and is not intended to replace a production shell.
+
+The current parser:
+
+- Requires spaces around operators such as `|`, `<`, `>`, and `>>`
+- Does not yet understand single or double quotes
+- Does not support escape sequences
+- Does not support environment-variable expansion such as `$HOME`
+- Does not support wildcard expansion such as `*.c`
+- Does not yet combine redirection with pipelines
+- Supports built-ins only outside pipelines
+- Does not include job control or background execution with `&`
+
+## Tests
+
+Build and run all tests with:
+
+```bash
+make clean test
+```
+
+The test suite currently covers:
+
+- Tokenization
+- External command execution and exit statuses
+- Input, output, append, and combined redirection
+- Single and multiple-command pipelines
+
+Some negative tests intentionally print error messages while confirming that invalid commands return the expected status.
+
+
 ## Project structure
 
 ```text
@@ -77,3 +158,4 @@ minishell> exit
 
 `hello` is only read at this stage; it is not executed. The second line exits
 the shell.
+
