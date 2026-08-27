@@ -21,6 +21,11 @@ int main(void)
 
         int token_count = tokenize(input, tokens);
 
+        if (token_count == -1) {
+            fprintf(stderr, "minishell: too many command tokens\n");
+            continue;
+        }
+
         if (token_count == 0) {
             continue;
         }

@@ -41,32 +41,134 @@ static int is_redirection_operator(const char *token);
 static int parse_redirections(char *tokens[], Redirection *redirection);
 static int setup_redirections(const Redirection *redirection);
 static int wait_for_child(pid_t child_pid);
+static int is_operator_character(char character);
 
 
-/**
- * Splits the input string into individual tokens.
- *
- * Tokens are separated by spaces and tabs and stored in the
- * provided tokens array. The array is always NULL-terminated.
- *
- * @param input  The input command string to tokenize.
- * @param tokens Array where the resulting tokens are stored.
- * @return Number of tokens found.
- */
+
 int tokenize(char *input, char *tokens[])
 {
     int token_count = 0;
-    char *token = strtok(input, " \t");
+    char *cursor = input;
 
-    while (token != NULL && token_count < MAX_ARGS - 1) {
-        tokens[token_count] = token;
+    while (*cursor != '\0') {
+        /*
+         * Skip spaces and tabs. Replacing them with '\0'
+         * also terminates any unused sections cleanly.
+         */
+        while (*cursor == ' ' || *cursor == '\t') {
+            *cursor = '\0';
+            cursor++;
+        }
+
+        if (*cursor == '\0') {
+            break;
+        }
+
+        /*
+         * Handle an operator found at the current position.
+         */
+        if (is_operator_character(*cursor)) {
+            if (token_count >= MAX_ARGS - 1) {
+                tokens[token_count] = NULL;
+                return -1;
+            }
+
+            if (*cursor == '>' && cursor[1] == '>') {
+                tokens[token_count] = ">>";
+                token_count++;
+                cursor += 2;
+            } else if (*cursor == '>') {
+                tokens[token_count] = ">";
+                token_count++;
+                cursor++;
+            } else if (*cursor == '<') {
+                tokens[token_count] = "<";
+                token_count++;
+                cursor++;
+            } else {
+                tokens[token_count] = "|";
+                token_count++;
+                cursor++;
+            }
+
+            continue;
+        }
+
+        /*
+         * The current character begins an ordinary word.
+         */
+        if (token_count >= MAX_ARGS - 1) {
+            tokens[token_count] = NULL;
+            return -1;
+        }
+
+        tokens[token_count] = cursor;
         token_count++;
 
-        token = strtok(NULL, " \t");
+        /*
+         * Move until the end of the word, whitespace,
+         * or an operator.
+         */
+        while (
+            *cursor != '\0' &&
+            *cursor != ' ' &&
+            *cursor != '\t' &&
+            !is_operator_character(*cursor)
+        ) {
+            cursor++;
+        }
+
+        if (*cursor == '\0') {
+            break;
+        }
+
+        /*
+         * Whitespace ends the word. The next loop
+         * iteration will skip any remaining whitespace.
+         */
+        if (*cursor == ' ' || *cursor == '\t') {
+            *cursor = '\0';
+            cursor++;
+            continue;
+        }
+
+        /*
+         * An operator directly follows the word.
+         * Save its type before replacing its first
+         * character with '\0'.
+         */
+        char operator_character = *cursor;
+        int append_operator =
+            operator_character == '>' &&
+            cursor[1] == '>';
+
+        *cursor = '\0';
+
+        if (token_count >= MAX_ARGS - 1) {
+            tokens[token_count] = NULL;
+            return -1;
+        }
+
+        if (append_operator) {
+            tokens[token_count] = ">>";
+            token_count++;
+            cursor += 2;
+        } else if (operator_character == '>') {
+            tokens[token_count] = ">";
+            token_count++;
+            cursor++;
+        } else if (operator_character == '<') {
+            tokens[token_count] = "<";
+            token_count++;
+            cursor++;
+        } else {
+            tokens[token_count] = "|";
+            token_count++;
+            cursor++;
+        }
     }
 
     tokens[token_count] = NULL;
-
     return token_count;
 }
 
@@ -248,6 +350,13 @@ int execute_external(char *tokens[])
 //           Recognize operators  
 // =============================================
 
+
+static int is_operator_character(char character)
+{
+    return character == '<' ||
+           character == '>' ||
+           character == '|';
+}
 
 
 /**
