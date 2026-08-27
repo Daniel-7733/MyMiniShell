@@ -42,6 +42,17 @@ static int parse_redirections(char *tokens[], Redirection *redirection);
 static int setup_redirections(const Redirection *redirection);
 static int wait_for_child(pid_t child_pid);
 
+
+/**
+ * Splits the input string into individual tokens.
+ *
+ * Tokens are separated by spaces and tabs and stored in the
+ * provided tokens array. The array is always NULL-terminated.
+ *
+ * @param input  The input command string to tokenize.
+ * @param tokens Array where the resulting tokens are stored.
+ * @return Number of tokens found.
+ */
 int tokenize(char *input, char *tokens[])
 {
     int token_count = 0;
@@ -59,6 +70,13 @@ int tokenize(char *input, char *tokens[])
     return token_count;
 }
 
+
+/**
+ * Prints the list of built-in commands supported by the shell.
+ *
+ * This function displays the available built-in commands and
+ * a short description of what each command does.
+ */
 void print_help(void)
 {
     printf("MyMiniShell built-in commands:\n");
@@ -68,6 +86,22 @@ void print_help(void)
     printf("  cd      Change the current working directory\n");
 }
 
+
+/**
+ * Checks whether a command is a shell built-in and executes it.
+ *
+ * Supported built-ins are:
+ * - exit
+ * - help
+ * - pwd
+ * - cd
+ *
+ * @param tokens     Array of command tokens.
+ * @param token_count Number of tokens in the command.
+ * @return BUILTIN_EXIT if the shell should exit,
+ *         BUILTIN_HANDLED if a built-in was executed,
+ *         BUILTIN_NOT_FOUND if the command is not a built-in.
+ */
 BuiltinResult execute_builtin(char *tokens[], int token_count)
 {
     if (strcmp(tokens[0], "exit") == 0) {
@@ -107,6 +141,14 @@ BuiltinResult execute_builtin(char *tokens[], int token_count)
     return BUILTIN_NOT_FOUND;
 }
 
+
+/**
+ * Prints the current working directory.
+ *
+ * Uses getcwd() to obtain the current directory and prints it
+ * to standard output. An error message is printed if the
+ * current directory cannot be obtained.
+ */
 void print_working_directory(void)
 {
     char cwd[INPUT_SIZE];
@@ -120,6 +162,16 @@ void print_working_directory(void)
 }
 
 
+/**
+ * Changes the shell's current working directory.
+ *
+ * If no directory is provided, the HOME environment variable
+ * is used as the destination. If a directory is provided,
+ * that directory is used instead.
+ *
+ * @param tokens      Array containing the command and arguments.
+ * @param token_count Number of tokens in the command.
+ */
 void change_directory(char *tokens[], int token_count)
 {
     char *destination;
@@ -146,11 +198,21 @@ void change_directory(char *tokens[], int token_count)
     }
 }
 
-/*
+
+/**
+ * Executes an external command in a child process.
+ *
+ * The function creates a child using fork(). The child handles
+ * redirections and executes the command using execvp(), while
+ * the parent waits for the child to finish.
+ *
  * fork() < 0    failure
  * fork() == 0   child process
  * fork() > 0    parent process; value is child’s process ID
-*/
+ *
+ * @param tokens Array containing the command and its arguments.
+ * @return The exit status of the child, or -1 if fork() fails.
+ */
 int execute_external(char *tokens[])
 {
     pid_t child_pid = fork();
@@ -181,9 +243,25 @@ int execute_external(char *tokens[])
 }
 
 
+
 // =============================================
 //           Recognize operators  
 // =============================================
+
+
+
+/**
+ * Checks whether a token is a supported redirection operator.
+ *
+ * Supported operators are:
+ * - <
+ * - >
+ * - >>
+ *
+ * @param token Token to check.
+ * @return Non-zero if the token is a redirection operator,
+ *         otherwise 0.
+ */
 static int is_redirection_operator(const char *token)
 {
     return strcmp(token, "<") == 0 ||
@@ -191,6 +269,18 @@ static int is_redirection_operator(const char *token)
            strcmp(token, ">>") == 0;
 }
 
+
+/**
+ * Parses redirection operators from a command.
+ *
+ * Redirection operators and their filenames are removed from
+ * the token array. The corresponding input/output filenames
+ * are stored in the Redirection structure.
+ *
+ * @param tokens      Array containing command tokens.
+ * @param redirection Structure used to store parsed redirections.
+ * @return 0 on success, -1 if the redirection syntax is invalid.
+ */
 static int parse_redirections(char *tokens[], Redirection *redirection)
 {
     redirection->input_file = NULL;
@@ -248,6 +338,17 @@ static int parse_redirections(char *tokens[], Redirection *redirection)
 }
 
 
+/**
+ * Sets up input and output redirections for the current process.
+ *
+ * Input redirection uses STDIN_FILENO, while output redirection
+ * uses STDOUT_FILENO. The >> operator appends to the output file,
+ * while > truncates the file before writing.
+ *
+ * @param redirection Redirection information to apply.
+ * @return 0 on success, -1 if opening, duplicating, or closing
+ *         a file descriptor fails.
+ */
 static int setup_redirections(const Redirection *redirection)
 {
     if (redirection->input_file != NULL) {
@@ -309,11 +410,21 @@ static int setup_redirections(const Redirection *redirection)
 }
 
 
+
 // =============================================
 //               The pipline
 //
 //       ls stdout ──► pipe ──► wc stdin 
 // =============================================
+
+
+
+/**
+ * Searches for a pipe operator in the token array.
+ *
+ * @param tokens Array containing command tokens.
+ * @return Index of the first "|" token, or -1 if no pipe exists.
+ */
 int find_pipe(char *tokens[])
 {
     for (int i = 0; tokens[i] != NULL; i++) {
@@ -325,6 +436,19 @@ int find_pipe(char *tokens[])
     return -1;
 }
 
+
+/**
+ * Splits a token array into separate commands for a pipeline.
+ *
+ * Each "|" token is replaced with NULL so that every command
+ * becomes a separate NULL-terminated token array.
+ *
+ * @param tokens   Original token array containing the pipeline.
+ * @param commands Array where pointers to individual commands
+ *                 are stored.
+ * @return Number of commands on success, or -1 if the pipeline
+ *         syntax is invalid.
+ */
 static int split_pipeline(char *tokens[], char **commands[])
 {
     int command_count = 1;
@@ -354,19 +478,20 @@ static int split_pipeline(char *tokens[], char **commands[])
     return command_count;
 }
 
+
+/**
+ * Executes a pipeline of external commands.
+ *
+ * Creates pipes and child processes so that the standard output
+ * of each command is connected to the standard input of the next
+ * command. Redirections are also applied to each command.
+ *
+ * @param tokens Array containing the complete pipeline.
+ * @return Exit status of the last command in the pipeline, or
+ *         an error status if pipeline setup fails.
+ */
 int execute_pipeline(char *tokens[])
 {
-    for (int i = 0; tokens[i] != NULL; i++) {
-        if (is_redirection_operator(tokens[i])) {
-            fprintf(
-                stderr,
-                "minishell: redirection with pipes "
-                "is not supported yet\n"
-            );
-            return 2;
-        }
-    }
-
     char **commands[MAX_ARGS];
     pid_t child_pids[MAX_ARGS];
 
@@ -443,6 +568,16 @@ int execute_pipeline(char *tokens[])
                 }
             }
 
+            Redirection redirection;
+
+            if (parse_redirections(commands[i], &redirection) == -1) {
+                _exit(2);
+            }
+
+            if (setup_redirections(&redirection) == -1) {
+                _exit(1);
+            }
+
             if (previous_read_fd != -1) {
                 close(previous_read_fd);
             }
@@ -492,9 +627,25 @@ int execute_pipeline(char *tokens[])
 }
 
 
+
 // =============================================
 //             Helper function 
 // =============================================
+
+
+
+/**
+ * Waits for a child process to finish and converts its status
+ * into a shell-compatible exit status.
+ *
+ * If the child exits normally, its exit status is returned.
+ * If the child is terminated by a signal, 128 plus the signal
+ * number is returned.
+ *
+ * @param child_pid Process ID of the child to wait for.
+ * @return Child exit status, or 1 if waitpid() fails or the
+ *         child status cannot be interpreted.
+ */
 static int wait_for_child(pid_t child_pid)
 {
     int status; // This veriable contains encoded information about how the child ended.
@@ -518,4 +669,5 @@ static int wait_for_child(pid_t child_pid)
 
     return 1;
 }
+
 
