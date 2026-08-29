@@ -10,13 +10,33 @@ typedef enum {
     BUILTIN_EXIT
 } BuiltinResult;
 
+typedef enum {
+    QUOTE_NONE,
+    QUOTE_SINGLE,
+    QUOTE_DOUBLE
+} QuoteState;
+
 typedef struct {
     char *input_file;
     char *output_file;
     int append;
 } Redirection;
 
-int tokenize(char *input, char *tokens[]);
+typedef struct {
+    const char *read_cursor;
+
+    char *storage;
+    char *write_cursor;
+    size_t storage_size;
+
+    char **tokens;
+    int token_count;
+    int inside_word;
+
+    QuoteState quote_state;
+} Lexer;
+
+int tokenize(const char *input, char *storage, size_t storage_size, char *tokens[]);
 BuiltinResult execute_builtin(char *tokens[], int token_count);
 int execute_external(char *tokens[]);
 void print_help(void);

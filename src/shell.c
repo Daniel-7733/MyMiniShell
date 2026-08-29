@@ -7,6 +7,8 @@
 #include <sys/wait.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stddef.h>
+#include <ctype.h>
 
 #include "shell.h"
 
@@ -40,136 +42,154 @@
 static int is_redirection_operator(const char *token);
 static int parse_redirections(char *tokens[], Redirection *redirection);
 static int setup_redirections(const Redirection *redirection);
-static int wait_for_child(pid_t child_pid);
 static int is_operator_character(char character);
+// private helper functions
+static int wait_for_child(pid_t child_pid);
+static int lexer_start_word(Lexer *lexer);
+static int lexer_append_character(Lexer *lexer, char character);
+static void lexer_finish_word(Lexer *lexer);
+static int lexer_add_operator(Lexer *lexer);
 
 
-
-int tokenize(char *input, char *tokens[])
+/**
+ *
+ * @param input for the original line.
+ * @param token_storage for processed words.
+ * @param tokens for pointers into that storage.
+ * @return 
+ */
+int tokenize(const char *input, char *storage, size_t storage_size, char *tokens[])
 {
-    int token_count = 0;
-    char *cursor = input;
+    Lexer lexer = {
+        .read_cursor = input,
+        .storage = storage,
+        .write_cursor = storage,
+        .storage_size = storage_size,
+        .tokens = tokens,
+        .token_count = 0,
+        .inside_word = 0,
+        .quote_state = QUOTE_NONE
+    };
 
-    while (*cursor != '\0') {
-        /*
-         * Skip spaces and tabs. Replacing them with '\0'
-         * also terminates any unused sections cleanly.
-         */
-        while (*cursor == ' ' || *cursor == '\t') {
-            *cursor = '\0';
-            cursor++;
-        }
-
-        if (*cursor == '\0') {
-            break;
-        }
+    while (*lexer.read_cursor != '\0') {
+        char character = *lexer.read_cursor;
 
         /*
-         * Handle an operator found at the current position.
+         * Inside single quotes, every character is ordinary
+         * except the closing single quote.
          */
-        if (is_operator_character(*cursor)) {
-            if (token_count >= MAX_ARGS - 1) {
-                tokens[token_count] = NULL;
+        if (lexer.quote_state == QUOTE_SINGLE) {
+            if (character == '\'') {
+                lexer.quote_state = QUOTE_NONE;
+            } else {
+                if (
+                    lexer_append_character(
+                        &lexer,
+                        character
+                    ) == -1
+                ) {
+                    return -1;
+                }
+            }
+
+            lexer.read_cursor++;
+            continue;
+        }
+
+        /*
+         * Inside double quotes, every character is ordinary
+         * except the closing double quote.
+         */
+        if (lexer.quote_state == QUOTE_DOUBLE) {
+            if (character == '"') {
+                lexer.quote_state = QUOTE_NONE;
+            } else {
+                if (
+                    lexer_append_character(
+                        &lexer,
+                        character
+                    ) == -1
+                ) {
+                    return -1;
+                }
+            }
+
+            lexer.read_cursor++;
+            continue;
+        }
+
+        /*
+         * Opening quote while currently unquoted.
+         */
+        if (character == '\'' || character == '"') {
+            if (lexer_start_word(&lexer) == -1) {
                 return -1;
             }
 
-            if (*cursor == '>' && cursor[1] == '>') {
-                tokens[token_count] = ">>";
-                token_count++;
-                cursor += 2;
-            } else if (*cursor == '>') {
-                tokens[token_count] = ">";
-                token_count++;
-                cursor++;
-            } else if (*cursor == '<') {
-                tokens[token_count] = "<";
-                token_count++;
-                cursor++;
+            if (character == '\'') {
+                lexer.quote_state = QUOTE_SINGLE;
             } else {
-                tokens[token_count] = "|";
-                token_count++;
-                cursor++;
+                lexer.quote_state = QUOTE_DOUBLE;
             }
 
+            lexer.read_cursor++;
             continue;
         }
 
         /*
-         * The current character begins an ordinary word.
+         * Unquoted whitespace finishes the current word.
          */
-        if (token_count >= MAX_ARGS - 1) {
-            tokens[token_count] = NULL;
+        if (isspace((unsigned char)character)) {
+            lexer_finish_word(&lexer);
+            lexer.read_cursor++;
+            continue;
+        }
+
+        /*
+         * An unquoted operator becomes its own token.
+         */
+        if (is_operator_character(character)) {
+            lexer_finish_word(&lexer);
+
+            if (lexer_add_operator(&lexer) == -1) {
+                return -1;
+            }
+
+            /*
+             * lexer_add_operator() advances read_cursor.
+             */
+            continue;
+        }
+
+        /*
+         * Everything else is part of an ordinary word.
+         */
+        if (lexer_start_word(&lexer) == -1) {
             return -1;
         }
 
-        tokens[token_count] = cursor;
-        token_count++;
-
-        /*
-         * Move until the end of the word, whitespace,
-         * or an operator.
-         */
-        while (
-            *cursor != '\0' &&
-            *cursor != ' ' &&
-            *cursor != '\t' &&
-            !is_operator_character(*cursor)
+        if (
+            lexer_append_character(
+                &lexer,
+                character
+            ) == -1
         ) {
-            cursor++;
-        }
-
-        if (*cursor == '\0') {
-            break;
-        }
-
-        /*
-         * Whitespace ends the word. The next loop
-         * iteration will skip any remaining whitespace.
-         */
-        if (*cursor == ' ' || *cursor == '\t') {
-            *cursor = '\0';
-            cursor++;
-            continue;
-        }
-
-        /*
-         * An operator directly follows the word.
-         * Save its type before replacing its first
-         * character with '\0'.
-         */
-        char operator_character = *cursor;
-        int append_operator =
-            operator_character == '>' &&
-            cursor[1] == '>';
-
-        *cursor = '\0';
-
-        if (token_count >= MAX_ARGS - 1) {
-            tokens[token_count] = NULL;
             return -1;
         }
 
-        if (append_operator) {
-            tokens[token_count] = ">>";
-            token_count++;
-            cursor += 2;
-        } else if (operator_character == '>') {
-            tokens[token_count] = ">";
-            token_count++;
-            cursor++;
-        } else if (operator_character == '<') {
-            tokens[token_count] = "<";
-            token_count++;
-            cursor++;
-        } else {
-            tokens[token_count] = "|";
-            token_count++;
-            cursor++;
-        }
+        lexer.read_cursor++;
     }
 
-    tokens[token_count] = NULL;
-    return token_count;
+    if (lexer.quote_state != QUOTE_NONE) {
+        fprintf(stderr, "minishell: unmatched quote\n");
+        tokens[0] = NULL;
+        return -1;
+    }
+
+    lexer_finish_word(&lexer);
+    tokens[lexer.token_count] = NULL;
+
+    return lexer.token_count;
 }
 
 
@@ -779,4 +799,102 @@ static int wait_for_child(pid_t child_pid)
     return 1;
 }
 
+/*
+ * Start-word helper 
+ * 0  = success
+ * -1 = failure 
+ */
+static int lexer_start_word(Lexer *lexer)
+{
+    if (lexer->inside_word) {
+        return 0;
+    }
+
+    if (lexer->token_count >= MAX_ARGS - 1) {
+        fprintf(stderr, "minishell: too many tokens\n");
+        return -1;
+    }
+
+    size_t used = (size_t)(lexer->write_cursor - lexer->storage);
+
+    if (used >= lexer->storage_size) {
+        fprintf(stderr, "minishell: token buffer full\n");
+        return -1;
+    }
+
+    lexer->tokens[lexer->token_count] = lexer->write_cursor;
+    lexer->token_count++;
+    lexer->inside_word = 1;
+
+    return 0;
+}
+
+/*
+ * Append-character helper
+ * 0  = success
+ * -1 = failure 
+ */
+static int lexer_append_character(Lexer *lexer, char character)
+{
+    size_t used = (size_t)(lexer->write_cursor - lexer->storage);
+
+    if (used >= lexer->storage_size - 1) {
+        fprintf(stderr, "minishell: token buffer full\n");
+        return -1;
+    }
+
+    *lexer->write_cursor = character;
+    lexer->write_cursor++;
+
+    return 0;
+}
+
+/*
+ * Finish-word helper
+ */
+static void lexer_finish_word(Lexer *lexer)
+{
+    if (!lexer->inside_word) {
+        return;
+    }
+
+    *lexer->write_cursor = '\0';
+    lexer->write_cursor++;
+    lexer->inside_word = 0;
+}
+
+/*
+ * Operator helper
+ * 0  = success
+ * -1 = failure 
+ */
+static int lexer_add_operator(Lexer *lexer)
+{
+    if (lexer->token_count >= MAX_ARGS - 1) {
+        fprintf(stderr, "minishell: too many tokens\n");
+        return -1;
+    }
+
+    char character = *lexer->read_cursor;
+
+    if (
+        character == '>' &&
+        lexer->read_cursor[1] == '>'
+    ) {
+        lexer->tokens[lexer->token_count] = ">>";
+        lexer->read_cursor += 2;
+    } else if (character == '>') {
+        lexer->tokens[lexer->token_count] = ">";
+        lexer->read_cursor++;
+    } else if (character == '<') {
+        lexer->tokens[lexer->token_count] = "<";
+        lexer->read_cursor++;
+    } else {
+        lexer->tokens[lexer->token_count] = "|";
+        lexer->read_cursor++;
+    }
+
+    lexer->token_count++;
+    return 0;
+}
 

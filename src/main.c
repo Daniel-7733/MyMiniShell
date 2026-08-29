@@ -6,6 +6,7 @@
 int main(void)
 {
     char input[INPUT_SIZE];
+    char token_storage[INPUT_SIZE];
     char *tokens[MAX_ARGS];
 
     while (1) {
@@ -19,7 +20,7 @@ int main(void)
 
         input[strcspn(input, "\n")] = '\0';
 
-        int token_count = tokenize(input, tokens);
+        int token_count = tokenize(input, token_storage, sizeof(token_storage), tokens);
 
         if (token_count == -1) {
             fprintf(stderr, "minishell: too many command tokens\n");
