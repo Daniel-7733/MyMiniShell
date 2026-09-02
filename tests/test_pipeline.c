@@ -5,135 +5,118 @@
 
 #include "shell.h"
 
-static void test_pipe_transfers_matching_data(void)
+static int execute_pipeline_text(const char *input)
 {
-    char *tokens[] = {
-        "/bin/echo",
-        "hello",
-        "|",
-        "/usr/bin/grep",
-        "-q",
-        "hello",
-        NULL
-    };
+    char storage[INPUT_SIZE];
+    Token tokens[MAX_ARGS];
+    CommandLine command_line;
 
-    int pipe_index = find_pipe(tokens);
+    int token_count = lex(
+        input,
+        storage,
+        sizeof(storage),
+        tokens
+    );
 
-    assert(pipe_index == 2);
-    assert(execute_pipeline(tokens) == 0);
+    assert(token_count >= 0);
+
+    int parse_result = parse_tokens(
+        tokens,
+        token_count,
+        &command_line
+    );
+
+    assert(parse_result == 0);
+    assert(command_line.command_count > 1);
+
+    /*
+     * execute_pipeline() finishes before this function
+     * returns, so storage remains alive while argv and
+     * filename pointers are being used.
+     */
+    return execute_pipeline(&command_line);
 }
 
-static void test_pipe_transfers_nonmatching_data(void)
+static void test_matching_pipeline(void)
 {
-    char *tokens[] = {
-        "/bin/echo",
-        "hello",
-        "|",
-        "/usr/bin/grep",
-        "-q",
-        "goodbye",
-        NULL
-    };
+    int result = execute_pipeline_text(
+        "/bin/echo hello | "
+        "/usr/bin/grep -q hello"
+    );
 
-    int pipe_index = find_pipe(tokens);
-
-    assert(pipe_index == 2);
-    assert(execute_pipeline(tokens) == 1);
+    assert(result == 0);
 }
 
-static void test_missing_left_command(void)
+static void test_nonmatching_pipeline(void)
 {
-    char *tokens[] = {
-        "|",
-        "/usr/bin/wc",
-        "-l",
-        NULL
-    };
+    int result = execute_pipeline_text(
+        "/bin/echo hello | "
+        "/usr/bin/grep -q goodbye"
+    );
 
-    int pipe_index = find_pipe(tokens);
-
-    assert(pipe_index == 0);
-    assert(execute_pipeline(tokens) == 2);
-}
-
-static void test_missing_right_command(void)
-{
-    char *tokens[] = {
-        "/bin/echo",
-        "hello",
-        "|",
-        NULL
-    };
-
-    int pipe_index = find_pipe(tokens);
-
-    assert(pipe_index == 2);
-    assert(execute_pipeline(tokens) == 2);
+    /*
+     * grep returns 1 when it finds no matching line.
+     */
+    assert(result == 1);
 }
 
 static void test_multiple_pipes(void)
 {
-    char *tokens[] = {
-        "/bin/echo",
-        "hello",
-        "|",
-        "/usr/bin/tr",
-        "a-z",
-        "A-Z",
-        "|",
-        "/usr/bin/grep",
-        "-q",
-        "HELLO",
-        NULL
-    };
+    int result = execute_pipeline_text(
+        "/bin/echo hello | "
+        "/usr/bin/tr a-z A-Z | "
+        "/usr/bin/grep -q HELLO"
+    );
 
-    assert(find_pipe(tokens) == 2);
-    assert(execute_pipeline(tokens) == 0);
+    assert(result == 0);
 }
 
 static void test_pipeline_with_redirection(void)
 {
     char input_filename[128];
     char output_filename[128];
+    char command_text[INPUT_SIZE];
 
     snprintf(
         input_filename,
         sizeof(input_filename),
-        "/tmp/minishell-pipe-input-%ld.txt",
+        "/tmp/minishell-pipeline-input-%ld.txt",
         (long)getpid()
     );
 
     snprintf(
         output_filename,
         sizeof(output_filename),
-        "/tmp/minishell-pipe-output-%ld.txt",
+        "/tmp/minishell-pipeline-output-%ld.txt",
         (long)getpid()
     );
 
     FILE *input_file = fopen(input_filename, "w");
     assert(input_file != NULL);
 
-    assert(fputs(
-        "banana\napple\ncherry\napple\n",
-        input_file
-    ) >= 0);
+    assert(
+        fputs(
+            "banana\napple\ncherry\napple\n",
+            input_file
+        ) >= 0
+    );
 
     assert(fclose(input_file) == 0);
 
-    char *tokens[] = {
-        "/bin/cat",
-        "<",
+    int written = snprintf(
+        command_text,
+        sizeof(command_text),
+        "/bin/cat<%s|"
+        "/usr/bin/sort|"
+        "/usr/bin/uniq>%s",
         input_filename,
-        "|",
-        "/usr/bin/sort",
-        "|",
-        "/usr/bin/uniq",
-        ">",
-        output_filename,
-        NULL
-    };
+        output_filename
+    );
 
-    assert(execute_pipeline(tokens) == 0);
+    assert(written >= 0);
+    assert((size_t)written < sizeof(command_text));
+
+    assert(execute_pipeline_text(command_text) == 0);
 
     FILE *output_file = fopen(output_filename, "r");
     assert(output_file != NULL);
@@ -161,14 +144,11 @@ static void test_pipeline_with_redirection(void)
 
 int main(void)
 {
-    test_pipe_transfers_matching_data();
-    test_pipe_transfers_nonmatching_data();
-    test_missing_left_command();
-    test_missing_right_command();
+    test_matching_pipeline();
+    test_nonmatching_pipeline();
     test_multiple_pipes();
     test_pipeline_with_redirection();
 
     printf("All pipeline tests passed.\n");
     return 0;
 }
-

@@ -16,17 +16,14 @@ static void test_output_redirection(void)
         (long)getpid()
     );
 
-    char *tokens[] = {
-        "/bin/echo",
-        "hello",
-        ">",
-        filename,
-        NULL
+    Command command = {
+        .argv = {"/bin/echo", "hello", NULL},
+        .argc = 2,
+        .output_file = filename,
+        .append_output = 0
     };
 
-    int status = execute_external(tokens);
-
-    assert(status == 0);
+    assert(execute_command(&command) == 0);
 
     FILE *file = fopen(filename, "r");
     assert(file != NULL);
@@ -51,24 +48,22 @@ static void test_append_redirection(void)
         (long)getpid()
     );
 
-    char *first_command[] = {
-        "/bin/echo",
-        "first",
-        ">",
-        filename,
-        NULL
+    Command first = {
+        .argv = {"/bin/echo", "first", NULL},
+        .argc = 2,
+        .output_file = filename,
+        .append_output = 0
     };
 
-    char *second_command[] = {
-        "/bin/echo",
-        "second",
-        ">>",
-        filename,
-        NULL
+    Command second = {
+        .argv = {"/bin/echo", "second", NULL},
+        .argc = 2,
+        .output_file = filename,
+        .append_output = 1
     };
 
-    assert(execute_external(first_command) == 0);
-    assert(execute_external(second_command) == 0);
+    assert(execute_command(&first) == 0);
+    assert(execute_command(&second) == 0);
 
     FILE *file = fopen(filename, "r");
     assert(file != NULL);
@@ -108,21 +103,30 @@ static void test_combined_redirection(void)
     FILE *input_file = fopen(input_filename, "w");
     assert(input_file != NULL);
 
-    assert(fputs("banana\napple\ncherry\n", input_file) >= 0);
+    assert(
+        fputs(
+            "banana\napple\ncherry\n",
+            input_file
+        ) >= 0
+    );
+
     assert(fclose(input_file) == 0);
 
-    char *tokens[] = {
-        "sort",
-        "<",
-        input_filename,
-        ">",
-        output_filename,
-        NULL
+    Command command = {
+        .argv = {"/usr/bin/sort", NULL},
+        .argc = 1,
+        .input_file = input_filename,
+        .output_file = output_filename,
+        .append_output = 0
     };
 
-    assert(execute_external(tokens) == 0);
+    assert(execute_command(&command) == 0);
 
-    FILE *output_file = fopen(output_filename, "r");
+    FILE *output_file = fopen(
+        output_filename,
+        "r"
+    );
+
     assert(output_file != NULL);
 
     char content[128];

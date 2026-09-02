@@ -2,28 +2,28 @@
 
 #include "shell.h"
 
-// typedef enum {
-//     UNQUOTED,
-//     SINGLE_QUOTED,
-//     DOUBLE_QUOTED
-// } LexerState;
-//
-//
-// typedef struct {
-//     // Group 1: All 8-byte members (Total: 40 bytes)
-//     const char *cursor; // 8 bytes
-//     char *storage;      // 8 bytes
-//     size_t capacity;    // 8 bytes
-//     size_t used;        // 8 bytes
-//     Token *tokens;      // 8 bytes
-//
-//     // Group 2: All 4-byte members packed together cleanly (Total: 12 bytes)
-//     int token_count;    // 4 bytes
-//     int inside_word;    // 4 bytes
-//     LexerState state;   // 4 bytes (Enum)
-//
-//     // -- Only 4 bytes of trailing padding added here to reach a multiple of 8 --
-// } Lexer;
+typedef enum {
+    UNQUOTED,
+    SINGLE_QUOTED,
+    DOUBLE_QUOTED
+} LexerState;
+
+
+typedef struct {
+    // Group 1: All 8-byte members (Total: 40 bytes)
+    const char *cursor; // 8 bytes
+    char *storage;      // 8 bytes
+    size_t capacity;    // 8 bytes
+    size_t used;        // 8 bytes
+    Token *tokens;      // 8 bytes
+
+    // Group 2: All 4-byte members packed together cleanly (Total: 12 bytes)
+    int token_count;    // 4 bytes
+    int inside_word;    // 4 bytes
+    LexerState state;   // 4 bytes (Enum)
+
+    // -- Only 4 bytes of trailing padding added here to reach a multiple of 8 --
+} Lexer;
 
 // ==============================================
 //     Helper: emit one typed token
