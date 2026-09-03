@@ -123,6 +123,100 @@ static void test_small_storage(void)
     );
 }
 
+static void test_escaped_whitespace(void)
+{
+    char storage[INPUT_SIZE];
+    Token tokens[MAX_ARGS];
+
+    int count = lex(
+        "echo hello\\ world",
+        storage,
+        sizeof(storage),
+        tokens
+    );
+
+    assert(count == 2);
+    assert(tokens[0].type == TOKEN_WORD);
+    assert(strcmp(tokens[0].text, "echo") == 0);
+    assert(tokens[1].type == TOKEN_WORD);
+    assert(strcmp(tokens[1].text, "hello world") == 0);
+}
+
+static void test_escaped_operators_are_words(void)
+{
+    char storage[INPUT_SIZE];
+    Token tokens[MAX_ARGS];
+
+    int count = lex(
+        "echo \\| \\> \\<",
+        storage,
+        sizeof(storage),
+        tokens
+    );
+
+    assert(count == 4);
+
+    assert(tokens[1].type == TOKEN_WORD);
+    assert(strcmp(tokens[1].text, "|") == 0);
+
+    assert(tokens[2].type == TOKEN_WORD);
+    assert(strcmp(tokens[2].text, ">") == 0);
+
+    assert(tokens[3].type == TOKEN_WORD);
+    assert(strcmp(tokens[3].text, "<") == 0);
+}
+
+static void test_escape_inside_double_quotes(void)
+{
+    char storage[INPUT_SIZE];
+    Token tokens[MAX_ARGS];
+
+    int count = lex(
+        "echo \"hello \\\"world\\\"\"",
+        storage,
+        sizeof(storage),
+        tokens
+    );
+
+    assert(count == 2);
+    assert(tokens[1].type == TOKEN_WORD);
+    assert(strcmp(
+        tokens[1].text,
+        "hello \"world\""
+    ) == 0);
+}
+
+static void test_single_quotes_preserve_backslash(void)
+{
+    char storage[INPUT_SIZE];
+    Token tokens[MAX_ARGS];
+
+    int count = lex(
+        "printf '\\n'",
+        storage,
+        sizeof(storage),
+        tokens
+    );
+
+    assert(count == 2);
+    assert(strcmp(tokens[1].text, "\\n") == 0);
+}
+
+static void test_trailing_escape(void)
+{
+    char storage[INPUT_SIZE];
+    Token tokens[MAX_ARGS];
+
+    int count = lex(
+        "echo hello\\",
+        storage,
+        sizeof(storage),
+        tokens
+    );
+
+    assert(count == -1);
+}
+
 int main(void)
 {
     test_quoted_operators_are_words();
@@ -130,6 +224,11 @@ int main(void)
     test_empty_and_joined_words();
     test_invalid_input();
     test_small_storage();
+    test_escaped_whitespace();
+    test_escaped_operators_are_words();
+    test_escape_inside_double_quotes();
+    test_single_quotes_preserve_backslash();
+    test_trailing_escape();
 
     printf("All typed-lexer tests passed.\n");
     return 0;

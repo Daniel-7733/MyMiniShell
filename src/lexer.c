@@ -26,6 +26,12 @@ typedef struct {
 } Lexer;
 
 // ==============================================
+//                Decleration
+// ==============================================
+static int consume_escape(Lexer *lexer);
+
+
+// ==============================================
 //     Helper: emit one typed token
 // ==============================================
 static int emit_token(Lexer *lexer, TokenType type, char *text)
@@ -124,6 +130,42 @@ static int emit_operator(Lexer *lexer)
 }
 
 // ==============================================
+//              Helper function
+// ==============================================
+static int consume_escape(Lexer *lexer)
+{
+    /*
+     * cursor currently points at '\'.
+     */
+    if (lexer->cursor[1] == '\0') {
+        return -1;
+    }
+
+    if (start_word(lexer) == -1) {
+        return -1;
+    }
+
+    /*
+     * Skip the backslash.
+     */
+    lexer->cursor++;
+
+    /*
+     * Copy the escaped character without interpreting it.
+     */
+    if (store_character(lexer, *lexer->cursor) == -1) {
+        return -1;
+    }
+
+    /*
+     * Move beyond the escaped character.
+     */
+    lexer->cursor++;
+
+    return 0;
+}
+
+// ==============================================
 //          Complete function
 // ==============================================
 int lex(const char *input, char *storage, size_t storage_size, Token tokens[])
@@ -143,16 +185,18 @@ int lex(const char *input, char *storage, size_t storage_size, Token tokens[])
         char character = *lexer.cursor;
 
         /*
-         * While quoted, only the matching closing quote
-         * has special meaning.
+         * Single-quoted state.
          */
-        if (lexer.state != UNQUOTED) {
-            char closing_quote = lexer.state == SINGLE_QUOTED ? '\'' : '"';
-
-            if (character == closing_quote) {
+        if (lexer.state == SINGLE_QUOTED) {
+            if (character == '\'') {
                 lexer.state = UNQUOTED;
             } else {
-                if (store_character(&lexer, character) == -1) {
+                if (
+                    store_character(
+                        &lexer,
+                        character
+                    ) == -1
+                ) {
                     return -1;
                 }
             }
@@ -160,6 +204,50 @@ int lex(const char *input, char *storage, size_t storage_size, Token tokens[])
             lexer.cursor++;
             continue;
         }
+
+        /*
+         * Double-quoted state.
+         */
+        if (lexer.state == DOUBLE_QUOTED) {
+            if (character == '"') {
+                lexer.state = UNQUOTED;
+                lexer.cursor++;
+                continue;
+            }
+
+            if (character == '\\') {
+                if (consume_escape(&lexer) == -1) {
+                    return -1;
+                }
+
+                continue;
+            }
+
+            if (
+                store_character(
+                    &lexer,
+                    character
+                ) == -1
+            ) {
+                return -1;
+            }
+
+            lexer.cursor++;
+            continue;
+        }
+
+        /*
+         * From this point onward, state must be UNQUOTED.
+         * Handle escaping while unquoted
+         */
+        if (character == '\\') {
+            if (consume_escape(&lexer) == -1) {
+                return -1;
+            }
+
+            continue;
+        }
+
 
         /*
          * Unquoted whitespace separates words.
