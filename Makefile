@@ -6,6 +6,7 @@ TARGET := minishell
 
 SOURCES := \
 	src/main.c \
+	src/input.c \
 	src/builtins.c \
 	src/executor.c \
 	src/lexer.c \
@@ -16,8 +17,10 @@ PARSER_TEST := test_parser
 EXECUTOR_TEST := test_executor
 REDIRECTION_TEST := test_redirection
 PIPELINE_TEST := test_pipeline
+INPUT_TEST := test_input
 
 TEST_TARGETS := \
+	$(INPUT_TEST) \
 	$(LEXER_TEST) \
 	$(PARSER_TEST) \
 	$(EXECUTOR_TEST) \
@@ -28,7 +31,7 @@ TEST_TARGETS := \
 
 all: $(TARGET)
 
-$(TARGET): $(SOURCES) include/shell.h
+$(TARGET): $(SOURCES) include/shell.h include/input.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SOURCES) -o $(TARGET)
 
 run: $(TARGET)
@@ -62,7 +65,13 @@ $(PIPELINE_TEST): tests/test_pipeline.c src/lexer.c src/parser.c src/executor.c 
 		src/executor.c \
 		-o $(PIPELINE_TEST)
 
+$(INPUT_TEST): tests/test_input.c src/input.c include/input.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) \
+		tests/test_input.c src/input.c \
+		-o $(INPUT_TEST)
+
 test: $(TEST_TARGETS)
+	./$(INPUT_TEST)
 	./$(LEXER_TEST)
 	./$(PARSER_TEST)
 	./$(EXECUTOR_TEST)

@@ -1,6 +1,6 @@
 #include <stdio.h>
-#include <string.h>
 
+#include "input.h"
 #include "shell.h"
 
 int main(void)
@@ -13,12 +13,22 @@ int main(void)
         printf("minishell> ");
         fflush(stdout);
 
-        if (fgets(input, sizeof(input), stdin) == NULL) {
+        InputResult input_result = read_command_line(stdin, input, sizeof(input));
+
+        if (input_result == INPUT_END) {
             putchar('\n');
             break;
         }
 
-        input[strcspn(input, "\n")] = '\0';
+        if (input_result == INPUT_ERROR) {
+            perror("minishell: input");
+            break;
+        }
+
+        if (input_result == INPUT_TOO_LONG) {
+            fprintf(stderr, "minishell: command line is too long\n");
+            continue;
+        }
 
         int token_count = lex(input, token_storage, sizeof(token_storage), tokens);
 
