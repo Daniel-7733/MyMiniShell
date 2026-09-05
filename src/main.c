@@ -1,10 +1,14 @@
 #include <stdio.h>
+#include <errno.h>
 
 #include "input.h"
 #include "shell.h"
+#include "signals.h"
 
 int main(void)
 {
+    install_shell_signal_handlers();
+
     char input[INPUT_SIZE];
     char token_storage[INPUT_SIZE];
     Token tokens[MAX_ARGS];
@@ -15,12 +19,23 @@ int main(void)
 
         InputResult input_result = read_command_line(stdin, input, sizeof(input));
 
+        /*
+         * Ctrl+D means end-of-input.
+         */
         if (input_result == INPUT_END) {
             putchar('\n');
             break;
         }
 
+        /*
+         * Ctrl+C may interrupt the input operation.
+         */
         if (input_result == INPUT_ERROR) {
+            if (errno == EINTR) {
+                clearerr(stdin);
+                continue;
+            }
+
             perror("minishell: input");
             break;
         }

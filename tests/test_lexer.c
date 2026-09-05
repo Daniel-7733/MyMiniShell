@@ -217,6 +217,51 @@ static void test_trailing_escape(void)
     assert(count == -1);
 }
 
+static void test_backslash_preserved_inside_double_quotes(void)
+{
+    char storage[128];
+    Token tokens[MAX_ARGS];
+
+    int count = lex(
+        "printf \"banana\\napple\\n\"",
+        storage,
+        sizeof(storage),
+        tokens
+    );
+
+    assert(count == 2);
+    assert(tokens[0].type == TOKEN_WORD);
+    assert(strcmp(tokens[0].text, "printf") == 0);
+    assert(tokens[1].type == TOKEN_WORD);
+    assert(strcmp(tokens[1].text, "banana\\napple\\n") == 0);
+}
+
+static void test_backslashes_inside_double_quotes(void)
+{
+    char storage[128];
+    Token tokens[MAX_ARGS];
+
+    int count = lex(
+        "printf \"banana\\napple\\nbanana\\n\"",
+        storage,
+        sizeof(storage),
+        tokens
+    );
+
+    assert(count == 2);
+
+    assert(tokens[0].type == TOKEN_WORD);
+    assert(strcmp(tokens[0].text, "printf") == 0);
+
+    assert(tokens[1].type == TOKEN_WORD);
+    assert(
+        strcmp(
+            tokens[1].text,
+            "banana\\napple\\nbanana\\n"
+        ) == 0
+    );
+}
+
 int main(void)
 {
     test_quoted_operators_are_words();
@@ -229,6 +274,9 @@ int main(void)
     test_escape_inside_double_quotes();
     test_single_quotes_preserve_backslash();
     test_trailing_escape();
+    test_backslash_preserved_inside_double_quotes();
+    test_backslashes_inside_double_quotes();
+
 
     printf("All typed-lexer tests passed.\n");
     return 0;

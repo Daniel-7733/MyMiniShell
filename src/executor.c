@@ -6,6 +6,7 @@
 #include <sys/wait.h>
 
 #include "shell.h"
+#include "signals.h"
 
 static int wait_for_child(pid_t child_pid);
 static int setup_command_redirections(const Command *command);
@@ -13,14 +14,15 @@ static int setup_command_redirections(const Command *command);
 static int wait_for_child(pid_t child_pid)
 {
     int status;
+    pid_t result;
 
-    while (waitpid(child_pid, &status, 0) == -1) {
-        if (errno == EINTR) {
-            continue;
-        }
+    do {
+        result = waitpid(child_pid, &status, 0);
+    } while (result == -1 && errno == EINTR);
 
+    if (result == -1) {
         perror("minishell: waitpid");
-        return 1;
+        return -1;
     }
 
     if (WIFEXITED(status)) {
@@ -31,7 +33,7 @@ static int wait_for_child(pid_t child_pid)
         return 128 + WTERMSIG(status);
     }
 
-    return 1;
+    return -1;
 }
 
 static int setup_command_redirections(const Command *command)
@@ -93,16 +95,17 @@ int execute_command(const Command *command)
 
     if (child_pid == -1) {
         perror("minishell: fork");
-        return 1;
+        return -1;
     }
 
     if (child_pid == 0) {
+        restore_child_signal_handlers();
+
         if (setup_command_redirections(command) == -1) {
             _exit(1);
         }
 
         execvp(command->argv[0], command->argv);
-
         perror(command->argv[0]);
         _exit(127);
     }
@@ -110,12 +113,17 @@ int execute_command(const Command *command)
     return wait_for_child(child_pid);
 }
 
+
 int execute_pipeline(const CommandLine *command_line)
 {
     pid_t child_pids[MAX_ARGS];
     int previous_read_fd = -1;
     int children_created = 0;
 
+    /*
+     * First loop:
+     * create pipes and fork every command.
+     */
     for (
         int command_index = 0;
         command_index < command_line->command_count;
@@ -123,7 +131,8 @@ int execute_pipeline(const CommandLine *command_line)
     ) {
         const Command *command = &command_line->commands[command_index];
 
-        int has_next_command = command_index < command_line->command_count - 1;
+        int has_next_command =
+            command_index < command_line->command_count - 1;
 
         int pipe_fds[2] = {-1, -1};
 
@@ -165,6 +174,8 @@ int execute_pipeline(const CommandLine *command_line)
         }
 
         if (child_pid == 0) {
+            restore_child_signal_handlers();
+
             /*
              * Read from the preceding pipe.
              */
@@ -230,21 +241,30 @@ int execute_pipeline(const CommandLine *command_line)
         }
     }
 
-    int pipeline_result = 0;
+    /*
+     * The parent should no longer keep this pipe open.
+     */
+    if (previous_read_fd != -1) {
+        close(previous_read_fd);
+    }
+
+    /*
+     * Second loop:
+     * wait for every child.
+     */
+    int final_status = 0;
 
     for (int i = 0; i < children_created; i++) {
-        int child_result =
-            wait_for_child(child_pids[i]);
+        int child_status = wait_for_child(child_pids[i]);
 
         /*
          * Pipeline status is the final command's status.
          */
         if (i == children_created - 1) {
-            pipeline_result = child_result;
+            final_status = child_status;
         }
     }
 
-    return pipeline_result;
+    return final_status;
 }
-
 

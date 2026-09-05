@@ -1,16 +1,17 @@
 CC := gcc
 CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -g
-CPPFLAGS := -Iinclude
+CPPFLAGS := -Iinclude -D_POSIX_C_SOURCE=200809L
 
 TARGET := minishell
 
 SOURCES := \
 	src/main.c \
-	src/input.c \
 	src/builtins.c \
 	src/executor.c \
+	src/input.c \
 	src/lexer.c \
-	src/parser.c
+	src/parser.c \
+	src/signals.c
 
 LEXER_TEST := test_lexer
 PARSER_TEST := test_parser
@@ -47,22 +48,25 @@ $(PARSER_TEST): tests/test_parser.c src/lexer.c src/parser.c include/shell.h
 		tests/test_parser.c src/lexer.c src/parser.c \
 		-o $(PARSER_TEST)
 
-$(EXECUTOR_TEST): tests/test_executor.c src/executor.c include/shell.h
+$(EXECUTOR_TEST): tests/test_executor.c src/executor.c src/signals.c include/shell.h include/signals.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) \
-		tests/test_executor.c src/executor.c \
+		tests/test_executor.c src/executor.c src/signals.c \
 		-o $(EXECUTOR_TEST)
 
-$(REDIRECTION_TEST): tests/test_redirection.c src/executor.c include/shell.h
+$(REDIRECTION_TEST): tests/test_redirection.c src/executor.c src/signals.c include/shell.h include/signals.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) \
-		tests/test_redirection.c src/executor.c \
+		tests/test_redirection.c \
+		src/executor.c \
+		src/signals.c \
 		-o $(REDIRECTION_TEST)
 
-$(PIPELINE_TEST): tests/test_pipeline.c src/lexer.c src/parser.c src/executor.c include/shell.h
+$(PIPELINE_TEST): tests/test_pipeline.c src/lexer.c src/parser.c src/executor.c src/signals.c include/shell.h include/signals.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) \
 		tests/test_pipeline.c \
 		src/lexer.c \
 		src/parser.c \
 		src/executor.c \
+		src/signals.c \
 		-o $(PIPELINE_TEST)
 
 $(INPUT_TEST): tests/test_input.c src/input.c include/input.h

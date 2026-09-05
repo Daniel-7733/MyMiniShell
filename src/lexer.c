@@ -216,19 +216,50 @@ int lex(const char *input, char *storage, size_t storage_size, Token tokens[])
             }
 
             if (character == '\\') {
-                if (consume_escape(&lexer) == -1) {
+                char next_character = lexer.cursor[1];
+
+                if (next_character == '\0') {
                     return -1;
                 }
 
+                /*
+                 * \" becomes "
+                 * \\ becomes \
+                 */
+                if (
+                    next_character == '"' ||
+                    next_character == '\\'
+                ) {
+                    if (
+                        store_character(
+                            &lexer,
+                            next_character
+                        ) == -1
+                    ) {
+                        return -1;
+                    }
+
+                    lexer.cursor += 2;
+                    continue;
+                }
+
+                /*
+                 * Preserve the backslash for sequences such as \n.
+                 * The next character will be processed on the next
+                 * loop iteration.
+                 */
+                if (store_character(&lexer, '\\') == -1) {
+                    return -1;
+                }
+
+                lexer.cursor++;
                 continue;
             }
 
-            if (
-                store_character(
-                    &lexer,
-                    character
-                ) == -1
-            ) {
+            /*
+             * Ordinary character inside double quotes.
+             */
+            if (store_character(&lexer, character) == -1) {
                 return -1;
             }
 
